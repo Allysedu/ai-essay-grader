@@ -10,6 +10,7 @@ import os
 import base64
 import io
 import zipfile
+import docx # 워드 문서 생성을 위해 추가
 
 # --- 🖥️ 앱 기본 설정 (가장 먼저 실행되어야 합니다) ---
 st.set_page_config(page_title="AI 에세이 평가 플랫폼", page_icon="🤖", layout="wide")
@@ -33,30 +34,64 @@ def check_password():
         return False
     return True
 
-# --- 🧠 보고서 생성 함수 ---
+# --- 🧠 보고서 생성 함수 (마크다운) ---
 def generate_report_markdown(result_data, eval_name, eval_date):
-    """학생 한 명의 평가 결과를 보고서 형식의 마크다운 텍스트로 만듭니다."""
+    """학생 한 명의 평가 결과를 화면 표시용 마크다운 텍스트로 만듭니다."""
     file_name = result_data['파일명']
     parsed_data = result_data.get('평가결과_분석', {})
     report = [
-        f"# AI 에세이 평가 상세 분석 보고서",
-        "---",
-        f"**- 평가명:** {eval_name}",
-        f"**- 평가일자:** {eval_date.strftime('%Y-%m-%d')}",
-        f"**- 파일명 (학생):** {file_name}",
-        f"**- 총점:** {parsed_data.get('총점', 'N/A')} 점",
-        "\n---\n",
-        "## 💬 종합 평가",
+        f"#### 💬 종합 평가",
         f"{parsed_data.get('종합 평가', '내용 없음')}",
-        "\n---\n",
-        "## 💯 항목별 상세 평가"
+        "---",
+        f"#### 💯 항목별 상세 평가"
     ]
     itemized_scores = parsed_data.get('항목별 평가', {})
     for item_name, details in itemized_scores.items():
-        report.append(f"### {item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})")
-        report.append(f"**평가 이유:** {details.get('이유', '내용 없음')}")
-        report.append("\n")
+        report.append(f"**- {item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})**")
+        report.append(f"> {details.get('이유', '내용 없음')}")
     return "\n".join(report)
+
+# --- 🧠 보고서 생성 함수 (워드 .docx) - 새로 추가된 부분 ---
+def generate_report_docx(result_data, eval_name, eval_date):
+    """학생 한 명의 평가 결과를 워드(.docx) 파일로 만듭니다."""
+    document = docx.Document()
+    file_name = result_data['파일명']
+    parsed_data = result_data.get('평가결과_분석', {})
+
+    document.add_heading('AI 에세이 평가 상세 분석 보고서', level=1)
+    
+    p = document.add_paragraph()
+    p.add_run('평가명: ').bold = True
+    p.add_run(eval_name)
+    
+    p = document.add_paragraph()
+    p.add_run('평가일자: ').bold = True
+    p.add_run(eval_date.strftime('%Y-%m-%d'))
+
+    p = document.add_paragraph()
+    p.add_run('파일명 (학생): ').bold = True
+    p.add_run(file_name)
+
+    p = document.add_paragraph()
+    p.add_run('총점: ').bold = True
+    p.add_run(f"{parsed_data.get('총점', 'N/A')} 점")
+
+    document.add_heading('💬 종합 평가', level=2)
+    document.add_paragraph(parsed_data.get('종합 평가', '내용 없음'))
+
+    document.add_heading('💯 항목별 상세 평가', level=2)
+    itemized_scores = parsed_data.get('항목별 평가', {})
+    for item_name, details in itemized_scores.items():
+        document.add_heading(f"{item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})", level=3)
+        p = document.add_paragraph()
+        p.add_run('평가 이유: ').bold = True
+        p.add_run(details.get('이유', '내용 없음'))
+
+    # 워드 파일을 메모리 버퍼에 저장하여 반환
+    doc_buffer = io.BytesIO()
+    document.save(doc_buffer)
+    doc_buffer.seek(0)
+    return doc_buffer
 
 # --- 🖥️ 2. 메인 앱 실행 ---
 if check_password():
@@ -229,21 +264,25 @@ if check_password():
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, 'w') as zipf:
                 for result in results_data:
-                    report_md = generate_report_markdown(result, eval_name, eval_date)
-                    zipf.writestr(f"{result['파일명']}_상세보고서.md", report_md)
+                    # 워드 보고서 생성 함수 호출
+                    report_docx_buffer = generate_report_docx(result, eval_name, eval_date)
+                    zipf.writestr(f"{result['파일명']}_상세보고서.docx", report_docx_buffer.getvalue())
             st.download_button(label="🗂️ 모든 상세 보고서 (ZIP) 다운로드", data=zip_buffer.getvalue(), file_name=f"{eval_name}_상세보고서.zip", mime="application/zip")
 
         st.markdown("### 📝 학생별 상세 평가")
         for result in results_data:
             with st.expander(f"📄 {result['파일명']} 상세 결과 보기"):
-                report_md_content = generate_report_markdown(result, eval_name, eval_date)
-                st.markdown(report_md_content)
+                # 화면 표시는 마크다운으로 유지
+                st.markdown(generate_report_markdown(result, eval_name, eval_date))
+                
+                # 개별 보고서 다운로드 버튼 (워드 파일로 변경)
+                report_docx_buffer = generate_report_docx(result, eval_name, eval_date)
                 st.download_button(
-                    label="📋 개별 보고서 다운로드 (.md)",
-                    data=report_md_content,
-                    file_name=f"{result['파일명']}_상세보고서.md",
-                    mime="text/markdown",
-                    key=f"download_{result['파일명']}" # 각 버튼에 고유한 키 부여
+                    label="📋 개별 보고서 다운로드 (.docx)",
+                    data=report_docx_buffer.getvalue(),
+                    file_name=f"{result['파일명']}_상세보고서.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key=f"download_{result['파일명']}"
                 )
         
         if st.button("💾 현재 평가를 기록에 저장"):
