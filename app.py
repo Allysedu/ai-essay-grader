@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import pdfplumber
-import google.generativeai as genai # 'genergenerativeai' -> 'generativeai' 오타 수정
+import google.generativeai as genai
 import time
 import re
 import json
@@ -11,6 +11,8 @@ import base64
 import io
 import zipfile
 import docx
+from docx.shared import Pt
+from docx.oxml.ns import qn
 
 # --- 🖥️ 앱 기본 설정 (가장 먼저 실행되어야 합니다) ---
 st.set_page_config(page_title="AI 에세이 평가 플랫폼", page_icon="🤖", layout="wide")
@@ -33,8 +35,8 @@ def check_password():
     return True
 
 # --- 🧠 보고서 생성 함수 (마크다운) ---
-def generate_report_markdown(result_data, eval_name, eval_date):
-    file_name = result_data['파일명']
+def generate_report_markdown(result_data):
+    """학생 한 명의 평가 결과를 화면 표시용 마크다운 텍스트로 만듭니다."""
     parsed_data = result_data.get('평가결과_분석', {})
     report = [
         f"#### 💬 종합 평가",
@@ -53,9 +55,16 @@ def generate_report_markdown(result_data, eval_name, eval_date):
 
 # --- 🧠 보고서 생성 함수 (워드 .docx) ---
 def generate_report_docx(result_data, eval_name, eval_date):
+    """학생 한 명의 평가 결과를 워드(.docx) 파일로 만듭니다."""
     document = docx.Document()
+    # 한글 폰트 설정
+    style = document.styles['Normal']
+    style.font.name = 'Malgun Gothic'
+    style.element.rPr.rFonts.set(qn('w:eastAsia'), 'Malgun Gothic')
+
     file_name = result_data['파일명']
     parsed_data = result_data.get('평가결과_분석', {})
+    
     document.add_heading('AI 에세이 평가 상세 분석 보고서', level=1)
     p = document.add_paragraph(); p.add_run('평가명: ').bold = True; p.add_run(eval_name)
     p = document.add_paragraph(); p.add_run('평가일자: ').bold = True; p.add_run(eval_date.strftime('%Y-%m-%d'))
@@ -69,6 +78,7 @@ def generate_report_docx(result_data, eval_name, eval_date):
         for item_name, details in itemized_scores.items():
             document.add_heading(f"{item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})", level=3)
             p = document.add_paragraph(); p.add_run('평가 이유: ').bold = True; p.add_run(details.get('이유', '내용 없음'))
+    
     doc_buffer = io.BytesIO()
     document.save(doc_buffer)
     doc_buffer.seek(0)
@@ -213,7 +223,7 @@ if check_password():
                     response = model.generate_content(prompt, request_options={'timeout': 300})
                     parsed_result = parse_ai_response(response.text, st.session_state.criteria_list)
                     results.append({"파일명": essay_file.name, "평가결과_원본": response.text, "평가결과_분석": parsed_result})
-                    time.sleep(1) # API 호출 사이에 약간의 간격을 둡니다.
+                    time.sleep(1)
                 except Exception as e:
                     st.error(f"{essay_file.name} 평가 중 오류 발생: {e}")
                     results.append({"파일명": essay_file.name, "평가결과_원본": f"오류 발생: {e}", "평가결과_분석": {}})
@@ -253,7 +263,10 @@ if check_password():
         st.markdown("### 📝 학생별 상세 평가")
         for result in results_data:
             with st.expander(f"📄 {result['파일명']} 상세 결과 보기"):
-                st.markdown(generate_report_markdown(result, eval_name, eval_date))
+                # 화면 표시는 마크다운 함수를 사용하도록 수정
+                st.markdown(generate_report_markdown(result))
+                
+                # 다운로드는 워드 함수를 사용
                 report_docx_buffer = generate_report_docx(result, eval_name, eval_date)
                 st.download_button(
                     label="📋 개별 보고서 다운로드 (.docx)",
