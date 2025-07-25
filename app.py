@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import pdfplumber
-import google.generativeai as genai
+import google.genergenerativeai as genai
 import time
 import re
 import json
@@ -10,22 +10,20 @@ import os
 import base64
 import io
 import zipfile
-import docx # 워드 문서 생성을 위해 추가
+import docx
 
 # --- 🖥️ 앱 기본 설정 (가장 먼저 실행되어야 합니다) ---
 st.set_page_config(page_title="AI 에세이 평가 플랫폼", page_icon="🤖", layout="wide")
 
 # --- 🔐 1. 비밀번호 확인 기능 ---
 def check_password():
-    """비밀번호가 맞으면 True를, 틀리면 False를 반환합니다."""
     if "password_correct" not in st.session_state:
         st.session_state.password_correct = False
     if not st.session_state.password_correct:
         st.header("🔒 로그인")
-        password = st.text_input("비밀번호를 입력하세요", type="password")
-        if st.button("로그인"):
-            # Streamlit Secrets에 APP_PASSWORD가 있으면 사용하고, 없으면 "skwlals25"를 기본값으로 사용합니다.
-            correct_password = st.secrets.get("APP_PASSWORD", "skwlals25")
+        password = st.text_input("비밀번호를 입력하세요", type="password", key="password_input")
+        if st.button("로그인", key="login_button"):
+            correct_password = st.secrets.get("APP_PASSWORD", "skwlals25") # 🔑 여기에 기본 비밀번호 설정
             if password == correct_password:
                 st.session_state.password_correct = True
                 st.rerun()
@@ -36,7 +34,6 @@ def check_password():
 
 # --- 🧠 보고서 생성 함수 (마크다운) ---
 def generate_report_markdown(result_data, eval_name, eval_date):
-    """학생 한 명의 평가 결과를 화면 표시용 마크다운 텍스트로 만듭니다."""
     file_name = result_data['파일명']
     parsed_data = result_data.get('평가결과_분석', {})
     report = [
@@ -46,48 +43,32 @@ def generate_report_markdown(result_data, eval_name, eval_date):
         f"#### 💯 항목별 상세 평가"
     ]
     itemized_scores = parsed_data.get('항목별 평가', {})
-    for item_name, details in itemized_scores.items():
-        report.append(f"**- {item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})**")
-        report.append(f"> {details.get('이유', '내용 없음')}")
+    if itemized_scores:
+        for item_name, details in itemized_scores.items():
+            report.append(f"**- {item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})**")
+            report.append(f"> {details.get('이유', '내용 없음')}")
+    else:
+        report.append("상세 평가 내용을 불러오지 못했습니다.")
     return "\n".join(report)
 
-# --- 🧠 보고서 생성 함수 (워드 .docx) - 새로 추가된 부분 ---
+# --- 🧠 보고서 생성 함수 (워드 .docx) ---
 def generate_report_docx(result_data, eval_name, eval_date):
-    """학생 한 명의 평가 결과를 워드(.docx) 파일로 만듭니다."""
     document = docx.Document()
     file_name = result_data['파일명']
     parsed_data = result_data.get('평가결과_분석', {})
-
     document.add_heading('AI 에세이 평가 상세 분석 보고서', level=1)
-    
-    p = document.add_paragraph()
-    p.add_run('평가명: ').bold = True
-    p.add_run(eval_name)
-    
-    p = document.add_paragraph()
-    p.add_run('평가일자: ').bold = True
-    p.add_run(eval_date.strftime('%Y-%m-%d'))
-
-    p = document.add_paragraph()
-    p.add_run('파일명 (학생): ').bold = True
-    p.add_run(file_name)
-
-    p = document.add_paragraph()
-    p.add_run('총점: ').bold = True
-    p.add_run(f"{parsed_data.get('총점', 'N/A')} 점")
-
+    p = document.add_paragraph(); p.add_run('평가명: ').bold = True; p.add_run(eval_name)
+    p = document.add_paragraph(); p.add_run('평가일자: ').bold = True; p.add_run(eval_date.strftime('%Y-%m-%d'))
+    p = document.add_paragraph(); p.add_run('파일명 (학생): ').bold = True; p.add_run(file_name)
+    p = document.add_paragraph(); p.add_run('총점: ').bold = True; p.add_run(f"{parsed_data.get('총점', 'N/A')} 점")
     document.add_heading('💬 종합 평가', level=2)
     document.add_paragraph(parsed_data.get('종합 평가', '내용 없음'))
-
     document.add_heading('💯 항목별 상세 평가', level=2)
     itemized_scores = parsed_data.get('항목별 평가', {})
-    for item_name, details in itemized_scores.items():
-        document.add_heading(f"{item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})", level=3)
-        p = document.add_paragraph()
-        p.add_run('평가 이유: ').bold = True
-        p.add_run(details.get('이유', '내용 없음'))
-
-    # 워드 파일을 메모리 버퍼에 저장하여 반환
+    if itemized_scores:
+        for item_name, details in itemized_scores.items():
+            document.add_heading(f"{item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})", level=3)
+            p = document.add_paragraph(); p.add_run('평가 이유: ').bold = True; p.add_run(details.get('이유', '내용 없음'))
     doc_buffer = io.BytesIO()
     document.save(doc_buffer)
     doc_buffer.seek(0)
@@ -97,9 +78,13 @@ def generate_report_docx(result_data, eval_name, eval_date):
 if check_password():
     # --- AI 초기화 ---
     try:
-        genai.configure(api_key=st.secrets["GOOGLE_AI_API_KEY"])
+        if "GOOGLE_AI_API_KEY" in st.secrets:
+            genai.configure(api_key=st.secrets["GOOGLE_AI_API_KEY"])
+        else:
+            st.warning("Google AI API 키가 설정되지 않았습니다. 관리자에게 문의하세요.")
+            st.stop()
     except Exception as e:
-        st.error("Google AI API 키를 설정하는 데 실패했습니다. 관리자에게 문의하세요.")
+        st.error(f"Google AI API 키 설정에 실패했습니다: {e}")
         st.stop()
 
     # --- ✨ 제목 및 프로필 사진 ---
@@ -107,12 +92,10 @@ if check_password():
     col1, col2 = st.columns([1, 5])
     with col1:
         image_file = 'my_photo.jpg' # ⚠️ 실제 사진 파일 이름으로 변경
-        try:
+        if os.path.exists(image_file):
             with open(image_file, "rb") as f:
                 img_base64 = base64.b64encode(f.read()).decode()
                 st.markdown(f'<div class="profile-img"><img src="data:image/jpeg;base64,{img_base64}"></div>', unsafe_allow_html=True)
-        except FileNotFoundError:
-            st.info("프로필 사진 파일을 찾을 수 없습니다.")
     with col2:
         st.title("AI 에세이 평가 플랫폼")
         st.caption("Ally 교수의 맞춤형 AI 평가 도우미")
@@ -134,7 +117,7 @@ if check_password():
         st.header("📚 평가 기록 불러오기")
         if history:
             history_options = {f"{item['평가명']} ({item['평가일자']})": i for i, item in enumerate(history)}
-            selected_history = st.selectbox("불러올 평가를 선택하세요.", options=history_options.keys())
+            selected_history = st.selectbox("불러올 평가를 선택하세요.", options=list(history_options.keys()))
             if st.button("선택한 평가 기준 불러오기"):
                 selected_index = history_options[selected_history]
                 st.session_state.criteria_list = history[selected_index]['평가기준']
@@ -196,7 +179,7 @@ if check_password():
     st.subheader("📄 3단계: 에세이 파일 업로드 및 평가 실행")
     uploaded_essays = st.file_uploader("평가할 학생들의 에세이 PDF 파일들을 업로드하세요.", type=['pdf'], accept_multiple_files=True)
 
-    if st.button("🚀 모든 파일 평가 시작"):
+    if st.button("🚀 모든 파일 평가 시작", key="start_eval_button"):
         if not eval_name:
             st.error("⚠️ 1단계에서 평가명을 입력해주세요!")
         elif not uploaded_essays:
@@ -206,7 +189,7 @@ if check_password():
             progress_bar = st.progress(0, text="평가를 시작합니다...")
             for i, essay_file in enumerate(uploaded_essays):
                 progress_text = f"평가 진행 중: {essay_file.name} ({i+1}/{len(uploaded_essays)})"
-                progress_bar.progress(i / len(uploaded_essays), text=progress_text)
+                progress_bar.progress((i + 1) / len(uploaded_essays), text=progress_text)
                 try:
                     full_text = ""
                     with pdfplumber.open(essay_file) as pdf:
@@ -230,11 +213,10 @@ if check_password():
                     response = model.generate_content(prompt, request_options={'timeout': 300})
                     parsed_result = parse_ai_response(response.text, st.session_state.criteria_list)
                     results.append({"파일명": essay_file.name, "평가결과_원본": response.text, "평가결과_분석": parsed_result})
-                    time.sleep(1)
+                    time.sleep(1) # API 호출 사이에 약간의 간격을 둡니다.
                 except Exception as e:
                     st.error(f"{essay_file.name} 평가 중 오류 발생: {e}")
                     results.append({"파일명": essay_file.name, "평가결과_원본": f"오류 발생: {e}", "평가결과_분석": {}})
-            progress_bar.progress(1.0, text="모든 평가가 완료되었습니다!")
             st.session_state['evaluation_results'] = results
 
     # --- 📈 4. 평가 결과 확인 및 다운로드 ---
@@ -259,33 +241,29 @@ if check_password():
             excel_buffer = io.BytesIO()
             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                 summary_df.to_excel(writer, index=False, sheet_name='전체 점수 요약')
-            st.download_button(label="📥 엑셀 요약표 다운로드", data=excel_buffer.getvalue(), file_name=f"{eval_name}_전체요약.xlsx", mime="application/vnd.ms-excel")
+            st.download_button(label="📥 엑셀 요약표 다운로드", data=excel_buffer.getvalue(), file_name=f"{eval_name}_전체요약.xlsx", mime="application/vnd.ms-excel", key="download_excel")
         with col2:
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, 'w') as zipf:
                 for result in results_data:
-                    # 워드 보고서 생성 함수 호출
                     report_docx_buffer = generate_report_docx(result, eval_name, eval_date)
-                    zipf.writestr(f"{result['파일명']}_상세보고서.docx", report_docx_buffer.getvalue())
-            st.download_button(label="🗂️ 모든 상세 보고서 (ZIP) 다운로드", data=zip_buffer.getvalue(), file_name=f"{eval_name}_상세보고서.zip", mime="application/zip")
+                    zipf.writestr(f"{os.path.splitext(result['파일명'])[0]}_상세보고서.docx", report_docx_buffer.getvalue())
+            st.download_button(label="🗂️ 모든 상세 보고서 (ZIP) 다운로드", data=zip_buffer.getvalue(), file_name=f"{eval_name}_상세보고서.zip", mime="application/zip", key="download_zip")
 
         st.markdown("### 📝 학생별 상세 평가")
         for result in results_data:
             with st.expander(f"📄 {result['파일명']} 상세 결과 보기"):
-                # 화면 표시는 마크다운으로 유지
                 st.markdown(generate_report_markdown(result, eval_name, eval_date))
-                
-                # 개별 보고서 다운로드 버튼 (워드 파일로 변경)
                 report_docx_buffer = generate_report_docx(result, eval_name, eval_date)
                 st.download_button(
                     label="📋 개별 보고서 다운로드 (.docx)",
                     data=report_docx_buffer.getvalue(),
-                    file_name=f"{result['파일명']}_상세보고서.docx",
+                    file_name=f"{os.path.splitext(result['파일명'])[0]}_상세보고서.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     key=f"download_{result['파일명']}"
                 )
         
-        if st.button("💾 현재 평가를 기록에 저장"):
+        if st.button("💾 현재 평가를 기록에 저장", key="save_history_button"):
             new_history_item = {
                 "평가명": eval_name,
                 "평가일자": eval_date.strftime("%Y-%m-%d"),
