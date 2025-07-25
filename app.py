@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import pdfplumber
-import google.genergenerativeai as genai
+import google.generativeai as genai # 'genergenerativeai' -> 'generativeai' 오타 수정
 import time
 import re
 import json
