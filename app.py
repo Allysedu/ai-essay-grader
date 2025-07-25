@@ -34,27 +34,27 @@ def check_password():
         return False
     return True
 
-# --- 🧠 보고서 생성 함수 (화면 표시용 Markdown) ---
-def generate_report_markdown(result_data, eval_name, eval_date):
-    file_name = result_data['파일명']
+# --- 🧠 보고서 생성 함수 (화면 표시용) ---
+def display_report(result_data):
+    """학생 한 명의 평가 결과를 화면에 세련된 형태로 '표시'합니다."""
     parsed_data = result_data.get('평가결과_분석', {})
-    report = [
-        f"#### 💬 종합 평가",
-        f"{parsed_data.get('종합 평가', '내용 없음')}",
-        "---",
-        f"#### 💯 항목별 상세 평가"
-    ]
+    
+    st.markdown("#### 💬 종합 평가")
+    st.markdown(f"<div style='padding: 10px; border-radius: 5px; background-color: #f0f2f6;'>{parsed_data.get('종합 평가', '내용 없음')}</div>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    st.markdown("#### 💯 항목별 상세 평가")
     itemized_scores = parsed_data.get('항목별 평가', {})
     if itemized_scores:
         for item_name, details in itemized_scores.items():
-            report.append(f"**- {item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})**")
-            report.append(f"> {details.get('이유', '내용 없음')}")
+            st.markdown(f"**- {item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})**")
+            st.info(f"{details.get('이유', '내용 없음')}")
     else:
-        report.append("상세 평가 내용을 불러오지 못했습니다.")
-    return "\n".join(report)
+        st.warning("상세 평가 내용을 불러오지 못했습니다.")
 
-# --- 🧠 보고서 생성 함수 (워드 .docx) ---
+# --- 🧠 보고서 생성 함수 (다운로드용 Word .docx) ---
 def generate_report_docx(result_data, eval_name, eval_date):
+    """학생 한 명의 평가 결과를 워드(.docx) 파일로 만듭니다."""
     document = docx.Document()
     style = document.styles['Normal']
     style.font.name = 'Malgun Gothic'
@@ -137,23 +137,17 @@ if check_password():
     def parse_ai_response(response_text, criteria_list):
         parsed_data = {}
         try:
-            # 종합 평가 추출
             summary_match = re.search(r"\[종합 평가\]\s*([\s\S]*?)\s*\[항목별 평가\]", response_text)
             parsed_data['종합 평가'] = summary_match.group(1).strip() if summary_match else "종합 평가를 추출하지 못했습니다."
-
-            # 항목별 평가 블록 추출
             itemized_block_match = re.search(r"\[항목별 평가\]\s*([\s\S]*)", response_text)
             itemized_block = itemized_block_match.group(1).strip() if itemized_block_match else ""
-
             scores = {}
             total_score = 0
             for criterion in criteria_list:
                 item_name = criterion['항목']
                 max_score = criterion['배점']
-                # 각 항목을 더 명확하게 찾기 위한 정규식
                 pattern = re.compile(rf"- {re.escape(item_name)}:\s*\[.*?(\d+)\s*점\]\s*([\s\S]*?)(?=\n- |\Z)")
                 match = pattern.search(itemized_block)
-                
                 if match:
                     score = int(match.group(1))
                     reason = match.group(2).strip()
@@ -161,7 +155,6 @@ if check_password():
                     total_score += score
                 else:
                     scores[item_name] = {"점수": 0, "이유": "AI 응답에서 해당 항목의 평가를 찾지 못했습니다.", "배점": max_score}
-            
             parsed_data['항목별 평가'] = scores
             parsed_data['총점'] = total_score
         except Exception as e:
@@ -170,8 +163,11 @@ if check_password():
 
     # --- UI 로직 ---
     st.subheader("📝 1단계: 평가 정보 입력")
-    eval_name = st.text_input("평가명", placeholder="예: 2025년 1학기 중간 논술 평가")
-    eval_date = st.date_input("평가일자", datetime.date.today())
+    # session_state를 사용하여 입력값 유지
+    if 'eval_name' not in st.session_state: st.session_state.eval_name = ""
+    if 'eval_date' not in st.session_state: st.session_state.eval_date = datetime.date.today()
+    st.session_state.eval_name = st.text_input("평가명", value=st.session_state.eval_name)
+    st.session_state.eval_date = st.date_input("평가일자", value=st.session_state.eval_date)
 
     with st.expander("📊 2단계: 평가 기준 설정", expanded=True):
         if 'criteria_list' not in st.session_state:
@@ -197,7 +193,7 @@ if check_password():
     uploaded_essays = st.file_uploader("평가할 학생들의 에세이 PDF 파일들을 업로드하세요.", type=['pdf'], accept_multiple_files=True)
 
     if st.button("🚀 모든 파일 평가 시작", key="start_eval_button"):
-        if not eval_name:
+        if not st.session_state.eval_name:
             st.error("⚠️ 1단계에서 평가명을 입력해주세요!")
         elif not uploaded_essays:
             st.warning("⚠️ 3단계에서 평가할 에세이 파일을 먼저 업로드해주세요.")
@@ -271,7 +267,10 @@ if check_password():
         st.markdown("### 📝 학생별 상세 평가")
         for result in results_data:
             with st.expander(f"📄 {result['파일명']} 상세 결과 보기"):
-                st.markdown(generate_report_markdown(result, st.session_state.get('eval_name', 'eval'), st.session_state.get('eval_date', datetime.date.today())))
+                # ✨ 화면 표시는 마크다운 함수를 사용하도록 수정
+                display_report(result)
+                
+                # ✨ 다운로드는 워드 함수를 사용
                 report_docx_buffer = generate_report_docx(result, st.session_state.get('eval_name', 'eval'), st.session_state.get('eval_date', datetime.date.today()))
                 st.download_button(
                     label="📋 개별 보고서 다운로드 (.docx)",
