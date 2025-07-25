@@ -25,7 +25,9 @@ def check_password():
         st.header("🔒 로그인")
         password = st.text_input("비밀번호를 입력하세요", type="password", key="password_input")
         if st.button("로그인", key="login_button"):
-            correct_password = st.secrets.get("APP_PASSWORD", "skwlals25") # 🔑 여기에 기본 비밀번호 설정
+            # st.secrets는 Streamlit Community Cloud 배포 시에만 작동합니다.
+            # 로컬 테스트를 위해 기본 비밀번호("my_secret_password123")를 함께 사용합니다.
+            correct_password = st.secrets.get("APP_PASSWORD", "skwlals25)
             if password == correct_password:
                 st.session_state.password_correct = True
                 st.rerun()
@@ -48,7 +50,7 @@ def display_report(result_data):
     if itemized_scores:
         for item_name, details in itemized_scores.items():
             st.markdown(f"**- {item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})**")
-            st.markdown(f"> {details.get('이유', '내용 없음')}")
+            st.info(f"{details.get('이유', '내용 없음')}")
     else:
         st.warning("상세 평가 내용을 불러오지 못했습니다.")
 
@@ -86,10 +88,20 @@ def generate_report_docx(result_data, eval_name, eval_date):
 if check_password():
     # --- AI 초기화 ---
     try:
+        # Streamlit Cloud에 배포된 경우 st.secrets에서 키를 가져옵니다.
         if "GOOGLE_AI_API_KEY" in st.secrets:
             genai.configure(api_key=st.secrets["GOOGLE_AI_API_KEY"])
+        # 로컬 테스트를 위해 session_state에 저장된 키를 사용합니다.
+        elif 'google_api_key' in st.session_state and st.session_state.google_api_key:
+            genai.configure(api_key=st.session_state.google_api_key)
         else:
-            st.warning("Google AI API 키가 설정되지 않았습니다. 관리자에게 문의하세요.")
+            # 사이드바에 키 입력창을 표시합니다.
+            with st.sidebar:
+                st.header("⚙️ API Key 설정")
+                st.session_state.google_api_key = st.text_input("Google AI API Key를 입력해주세요.", type="password")
+                if st.button("API 키 적용"):
+                    st.rerun()
+            st.warning("Google AI API 키가 필요합니다. 사이드바에서 입력해주세요.")
             st.stop()
     except Exception as e:
         st.error(f"Google AI API 키 설정에 실패했습니다: {e}")
@@ -163,7 +175,6 @@ if check_password():
 
     # --- UI 로직 ---
     st.subheader("📝 1단계: 평가 정보 입력")
-    # session_state를 사용하여 입력값 유지
     if 'eval_name' not in st.session_state: st.session_state.eval_name = ""
     if 'eval_date' not in st.session_state: st.session_state.eval_date = datetime.date.today()
     st.session_state.eval_name = st.text_input("평가명", value=st.session_state.eval_name)
@@ -267,10 +278,13 @@ if check_password():
         st.markdown("### 📝 학생별 상세 평가")
         for result in results_data:
             with st.expander(f"📄 {result['파일명']} 상세 결과 보기"):
+                # ✨ 화면 표시는 세련된 보고서 형태로 수정
                 display_report(result)
+                
+                # ✨ 다운로드는 워드 파일(.docx)을 제공
                 report_docx_buffer = generate_report_docx(result, st.session_state.get('eval_name', 'eval'), st.session_state.get('eval_date', datetime.date.today()))
                 st.download_button(
-                    label="� 개별 보고서 다운로드 (.docx)",
+                    label="📋 개별 보고서 다운로드 (.docx)",
                     data=report_docx_buffer.getvalue(),
                     file_name=f"{os.path.splitext(result['파일명'])[0]}_상세보고서.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -288,4 +302,3 @@ if check_password():
             save_history(history)
             st.success("현재 평가가 기록에 성공적으로 저장되었습니다!")
             st.rerun()
-�
