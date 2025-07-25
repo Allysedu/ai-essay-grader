@@ -36,7 +36,6 @@ def check_password():
 
 # --- 🧠 보고서 생성 함수 (화면 표시용 Markdown) ---
 def generate_report_markdown(result_data, eval_name, eval_date):
-    """학생 한 명의 평가 결과를 화면에 표시할 세련된 마크다운 텍스트로 만듭니다."""
     file_name = result_data['파일명']
     parsed_data = result_data.get('평가결과_분석', {})
     report = [
@@ -49,17 +48,14 @@ def generate_report_markdown(result_data, eval_name, eval_date):
     if itemized_scores:
         for item_name, details in itemized_scores.items():
             report.append(f"**- {item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})**")
-            # '>'를 사용하여 들여쓰기 효과를 줍니다.
             report.append(f"> {details.get('이유', '내용 없음')}")
     else:
         report.append("상세 평가 내용을 불러오지 못했습니다.")
     return "\n".join(report)
 
-# --- 🧠 보고서 생성 함수 (다운로드용 Word .docx) ---
+# --- 🧠 보고서 생성 함수 (워드 .docx) ---
 def generate_report_docx(result_data, eval_name, eval_date):
-    """학생 한 명의 평가 결과를 워드(.docx) 파일로 만듭니다."""
     document = docx.Document()
-    # 한글 폰트 설정
     style = document.styles['Normal']
     style.font.name = 'Malgun Gothic'
     style.element.rPr.rFonts.set(qn('w:eastAsia'), 'Malgun Gothic')
@@ -137,30 +133,39 @@ if check_password():
                 st.rerun()
         else: st.info("저장된 평가 기록이 없습니다.")
 
-    # --- 🧠 AI 응답 분석 함수 ---
+    # --- 🧠 AI 응답 분석 함수 (안정성 강화) ---
     def parse_ai_response(response_text, criteria_list):
         parsed_data = {}
         try:
+            # 종합 평가 추출
             summary_match = re.search(r"\[종합 평가\]\s*([\s\S]*?)\s*\[항목별 평가\]", response_text)
-            parsed_data['종합 평가'] = summary_match.group(1).strip() if summary_match else "종합 평가 추출 실패"
+            parsed_data['종합 평가'] = summary_match.group(1).strip() if summary_match else "종합 평가를 추출하지 못했습니다."
+
+            # 항목별 평가 블록 추출
+            itemized_block_match = re.search(r"\[항목별 평가\]\s*([\s\S]*)", response_text)
+            itemized_block = itemized_block_match.group(1).strip() if itemized_block_match else ""
+
             scores = {}
             total_score = 0
             for criterion in criteria_list:
                 item_name = criterion['항목']
                 max_score = criterion['배점']
+                # 각 항목을 더 명확하게 찾기 위한 정규식
                 pattern = re.compile(rf"- {re.escape(item_name)}:\s*\[.*?(\d+)\s*점\]\s*([\s\S]*?)(?=\n- |\Z)")
-                match = pattern.search(response_text)
+                match = pattern.search(itemized_block)
+                
                 if match:
                     score = int(match.group(1))
                     reason = match.group(2).strip()
                     scores[item_name] = {"점수": score, "이유": reason, "배점": max_score}
                     total_score += score
                 else:
-                    scores[item_name] = {"점수": 0, "이유": "항목별 평가 추출 실패", "배점": max_score}
+                    scores[item_name] = {"점수": 0, "이유": "AI 응답에서 해당 항목의 평가를 찾지 못했습니다.", "배점": max_score}
+            
             parsed_data['항목별 평가'] = scores
             parsed_data['총점'] = total_score
         except Exception as e:
-            return {"종합 평가": f"AI 응답 분석 실패: {e}", "항목별 평가": {}, "총점": 0}
+            return {"종합 평가": f"AI 응답 분석 중 오류 발생: {e}", "항목별 평가": {}, "총점": 0}
         return parsed_data
 
     # --- UI 로직 ---
@@ -230,12 +235,13 @@ if check_password():
                     st.error(f"{essay_file.name} 평가 중 오류 발생: {e}")
                     results.append({"파일명": essay_file.name, "평가결과_원본": f"오류 발생: {e}", "평가결과_분석": {}})
             st.session_state['evaluation_results'] = results
+            st.rerun() # 평가 완료 후 새로고침하여 결과 표시
 
     # --- 📈 4. 평가 결과 확인 및 다운로드 ---
     if 'evaluation_results' in st.session_state and st.session_state['evaluation_results']:
         st.subheader("📈 4단계: 평가 결과 확인 및 다운로드")
         results_data = st.session_state['evaluation_results']
-        criteria_names = [c['항목'] for c in st.session_state.criteria_list]
+        criteria_names = [c['항목'] for c in st.session_state.criteria_list] if 'criteria_list' in st.session_state else []
         summary_data = []
         for result in results_data:
             row = {'파일명': result['파일명']}
@@ -253,23 +259,20 @@ if check_password():
             excel_buffer = io.BytesIO()
             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                 summary_df.to_excel(writer, index=False, sheet_name='전체 점수 요약')
-            st.download_button(label="📥 엑셀 요약표 다운로드", data=excel_buffer.getvalue(), file_name=f"{eval_name}_전체요약.xlsx", mime="application/vnd.ms-excel", key="download_excel")
+            st.download_button(label="📥 엑셀 요약표 다운로드", data=excel_buffer.getvalue(), file_name=f"{st.session_state.get('eval_name', 'eval')}_전체요약.xlsx", mime="application/vnd.ms-excel", key="download_excel")
         with col2:
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, 'w') as zipf:
                 for result in results_data:
-                    report_docx_buffer = generate_report_docx(result, eval_name, eval_date)
+                    report_docx_buffer = generate_report_docx(result, st.session_state.get('eval_name', 'eval'), st.session_state.get('eval_date', datetime.date.today()))
                     zipf.writestr(f"{os.path.splitext(result['파일명'])[0]}_상세보고서.docx", report_docx_buffer.getvalue())
-            st.download_button(label="🗂️ 모든 상세 보고서 (ZIP) 다운로드", data=zip_buffer.getvalue(), file_name=f"{eval_name}_상세보고서.zip", mime="application/zip", key="download_zip")
+            st.download_button(label="🗂️ 모든 상세 보고서 (ZIP) 다운로드", data=zip_buffer.getvalue(), file_name=f"{st.session_state.get('eval_name', 'eval')}_상세보고서.zip", mime="application/zip", key="download_zip")
 
         st.markdown("### 📝 학생별 상세 평가")
         for result in results_data:
             with st.expander(f"📄 {result['파일명']} 상세 결과 보기"):
-                # ✨ 화면 표시는 마크다운 함수를 사용하도록 수정
-                st.markdown(generate_report_markdown(result, eval_name, eval_date))
-                
-                # ✨ 다운로드는 워드 함수를 사용
-                report_docx_buffer = generate_report_docx(result, eval_name, eval_date)
+                st.markdown(generate_report_markdown(result, st.session_state.get('eval_name', 'eval'), st.session_state.get('eval_date', datetime.date.today())))
+                report_docx_buffer = generate_report_docx(result, st.session_state.get('eval_name', 'eval'), st.session_state.get('eval_date', datetime.date.today()))
                 st.download_button(
                     label="📋 개별 보고서 다운로드 (.docx)",
                     data=report_docx_buffer.getvalue(),
@@ -280,8 +283,8 @@ if check_password():
         
         if st.button("💾 현재 평가를 기록에 저장", key="save_history_button"):
             new_history_item = {
-                "평가명": eval_name,
-                "평가일자": eval_date.strftime("%Y-%m-%d"),
+                "평가명": st.session_state.get('eval_name', 'eval'),
+                "평가일자": st.session_state.get('eval_date', datetime.date.today()).strftime("%Y-%m-%d"),
                 "평가기준": st.session_state.criteria_list,
                 "평가결과": results_data
             }
