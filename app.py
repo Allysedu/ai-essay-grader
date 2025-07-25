@@ -26,7 +26,7 @@ def check_password():
         password = st.text_input("비밀번호를 입력하세요", type="password", key="password_input")
         if st.button("로그인", key="login_button"):
             # st.secrets는 Streamlit Community Cloud 배포 시에만 작동합니다.
-            # 로컬 테스트를 위해 기본 비밀번호("my_secret_password123")를 함께 사용합니다.
+            # 로컬 테스트를 위해 기본 비밀번호("skwlals25")를 함께 사용합니다.
             correct_password = st.secrets.get("APP_PASSWORD", "skwlals25")
             if password == correct_password:
                 st.session_state.password_correct = True
@@ -281,7 +281,7 @@ if check_password():
                 display_report(result)
                 report_docx_buffer = generate_report_docx(result, st.session_state.get('eval_name', 'eval'), st.session_state.get('eval_date', datetime.date.today()))
                 st.download_button(
-                    label="� 개별 보고서 다운로드 (.docx)",
+                    label="📋 개별 보고서 다운로드 (.docx)",
                     data=report_docx_buffer.getvalue(),
                     file_name=f"{os.path.splitext(result['파일명'])[0]}_상세보고서.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -299,4 +299,3 @@ if check_password():
             save_history(history)
             st.success("현재 평가가 기록에 성공적으로 저장되었습니다!")
             st.rerun()
-�
