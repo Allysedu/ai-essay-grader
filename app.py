@@ -40,7 +40,6 @@ def display_report(result_data):
     parsed_data = result_data.get('평가결과_분석', {})
     
     st.markdown("#### 💬 종합 평가")
-    # st.info 대신 st.markdown을 사용하여 배경색이 있는 상자를 만듭니다.
     st.markdown(f"<div style='padding: 10px; border-radius: 5px; background-color: #f0f2f6; color: black;'>{parsed_data.get('종합 평가', '내용 없음')}</div>", unsafe_allow_html=True)
     st.markdown("---")
     
@@ -49,7 +48,6 @@ def display_report(result_data):
     if itemized_scores:
         for item_name, details in itemized_scores.items():
             st.markdown(f"**- {item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})**")
-            # st.info 대신 markdown을 사용하여 들여쓰기된 텍스트로 표시합니다.
             st.markdown(f"> {details.get('이유', '내용 없음')}")
     else:
         st.warning("상세 평가 내용을 불러오지 못했습니다.")
@@ -164,7 +162,7 @@ if check_password():
         return parsed_data
 
     # --- UI 로직 ---
-    st.subheader("� 1단계: 평가 정보 입력")
+    st.subheader("📝 1단계: 평가 정보 입력")
     # session_state를 사용하여 입력값 유지
     if 'eval_name' not in st.session_state: st.session_state.eval_name = ""
     if 'eval_date' not in st.session_state: st.session_state.eval_date = datetime.date.today()
@@ -233,7 +231,7 @@ if check_password():
                     st.error(f"{essay_file.name} 평가 중 오류 발생: {e}")
                     results.append({"파일명": essay_file.name, "평가결과_원본": f"오류 발생: {e}", "평가결과_분석": {}})
             st.session_state['evaluation_results'] = results
-            st.rerun() # 평가 완료 후 새로고침하여 결과 표시
+            st.rerun()
 
     # --- 📈 4. 평가 결과 확인 및 다운로드 ---
     if 'evaluation_results' in st.session_state and st.session_state['evaluation_results']:
@@ -269,13 +267,10 @@ if check_password():
         st.markdown("### 📝 학생별 상세 평가")
         for result in results_data:
             with st.expander(f"📄 {result['파일명']} 상세 결과 보기"):
-                # ✨ 화면 표시는 세련된 보고서 형태로 수정
                 display_report(result)
-                
-                # ✨ 다운로드는 워드 파일(.docx)을 제공
                 report_docx_buffer = generate_report_docx(result, st.session_state.get('eval_name', 'eval'), st.session_state.get('eval_date', datetime.date.today()))
                 st.download_button(
-                    label="📋 개별 보고서 다운로드 (.docx)",
+                    label="� 개별 보고서 다운로드 (.docx)",
                     data=report_docx_buffer.getvalue(),
                     file_name=f"{os.path.splitext(result['파일명'])[0]}_상세보고서.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
