@@ -34,9 +34,10 @@ def check_password():
         return False
     return True
 
-# --- 🧠 보고서 생성 함수 (마크다운) ---
-def generate_report_markdown(result_data):
-    """학생 한 명의 평가 결과를 화면 표시용 마크다운 텍스트로 만듭니다."""
+# --- 🧠 보고서 생성 함수 (화면 표시용 Markdown) ---
+def generate_report_markdown(result_data, eval_name, eval_date):
+    """학생 한 명의 평가 결과를 화면에 표시할 세련된 마크다운 텍스트로 만듭니다."""
+    file_name = result_data['파일명']
     parsed_data = result_data.get('평가결과_분석', {})
     report = [
         f"#### 💬 종합 평가",
@@ -48,12 +49,13 @@ def generate_report_markdown(result_data):
     if itemized_scores:
         for item_name, details in itemized_scores.items():
             report.append(f"**- {item_name} ({details.get('점수', 'N/A')} / {details.get('배점', 'N/A')})**")
+            # '>'를 사용하여 들여쓰기 효과를 줍니다.
             report.append(f"> {details.get('이유', '내용 없음')}")
     else:
         report.append("상세 평가 내용을 불러오지 못했습니다.")
     return "\n".join(report)
 
-# --- 🧠 보고서 생성 함수 (워드 .docx) ---
+# --- 🧠 보고서 생성 함수 (다운로드용 Word .docx) ---
 def generate_report_docx(result_data, eval_name, eval_date):
     """학생 한 명의 평가 결과를 워드(.docx) 파일로 만듭니다."""
     document = docx.Document()
@@ -263,10 +265,10 @@ if check_password():
         st.markdown("### 📝 학생별 상세 평가")
         for result in results_data:
             with st.expander(f"📄 {result['파일명']} 상세 결과 보기"):
-                # 화면 표시는 마크다운 함수를 사용하도록 수정
-                st.markdown(generate_report_markdown(result))
+                # ✨ 화면 표시는 마크다운 함수를 사용하도록 수정
+                st.markdown(generate_report_markdown(result, eval_name, eval_date))
                 
-                # 다운로드는 워드 함수를 사용
+                # ✨ 다운로드는 워드 함수를 사용
                 report_docx_buffer = generate_report_docx(result, eval_name, eval_date)
                 st.download_button(
                     label="📋 개별 보고서 다운로드 (.docx)",
